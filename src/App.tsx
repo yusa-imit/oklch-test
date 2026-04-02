@@ -3,8 +3,9 @@ import { css } from '@emotion/react';
 import {
   useTheme,
   SCALE_STEPS, BG_STEPS, ALPHA_KEYS, GRAY_STEPS,
-  COLOR_PRESETS, CHROMATIC_TABLE,
-  type ColorPreset,
+  COLOR_PRESETS, CHROMATIC_TABLE, V1_CHROMATIC_TABLE,
+  BG_TABLE, BG_HUE_OFF_COEFS, V1_BG_TABLE, V1_BG_HUE_COEFS, ALPHA_STEPS,
+  type ColorPreset, type FormulaVersion,
 } from './theme';
 import tokensJson from './theme/tokens.json';
 
@@ -39,33 +40,27 @@ function originalHex(presetName: string, step: number): string {
   return family?.[String(step)]?.value ?? 'transparent';
 }
 
-function presetStepColor(preset: ColorPreset, step: number): string {
+function presetStepColor(preset: ColorPreset, step: number, formula: FormulaVersion): string {
+  if (formula === 'v1') {
+    const entry = V1_CHROMATIC_TABLE.find(([s]) => s === step);
+    if (!entry) return 'transparent';
+    const [, mL, sL, cL, oL, mC, sC, cC, oC] = entry;
+    const hRad = preset.h * Math.PI / 180;
+    const L = Math.max(0, Math.min(1, mL * preset.l + sL * Math.sin(hRad) + cL * Math.cos(hRad) + oL));
+    const C = Math.max(0, mC * preset.c + sC * Math.sin(hRad) + cC * Math.cos(hRad) + oC);
+    return `oklch(${L} ${C} ${preset.h})`;
+  }
   const entry = CHROMATIC_TABLE.find(([s]) => s === step);
   if (!entry) return 'transparent';
-  const [, mL, sL, cL, oL, mC, sC, cC, oC] = entry;
+  const [, mL, oL, rC, sC, cC] = entry;
   const hRad = preset.h * Math.PI / 180;
-  const L = Math.max(0, Math.min(1, mL * preset.l + sL * Math.sin(hRad) + cL * Math.cos(hRad) + oL));
-  const C = Math.max(0, mC * preset.c + sC * Math.sin(hRad) + cC * Math.cos(hRad) + oC);
+  const L = Math.max(0, Math.min(1, mL * preset.l + oL));
+  const ratio = rC + sC * Math.sin(hRad) + cC * Math.cos(hRad);
+  const C = Math.max(0, preset.c * ratio);
   return `oklch(${L} ${C} ${preset.h})`;
 }
 
-// BG / Alpha comparison helpers
-
-const BG_TABLE: [number,number,number,number,number,number,number,number,number][] = [
-  [50,  0.055582,-0.003360, 0.000673, 0.941510, 0.038941,-0.000293,-0.000194,-0.004333],
-  [75,  0.024260,-0.000511,-0.000248, 0.953579, 0.024418,-0.000889,-0.000595, 0.000219],
-  [100, 0.044221, 0.001982,-0.002512, 0.926871, 0.043556,-0.002347,-0.000245,-0.001690],
-  [150, 0.069333, 0.001260,-0.002403, 0.877983, 0.092005,-0.003332, 0.000012,-0.006938],
-  [200, 0.095928, 0.000221,-0.003765, 0.812673, 0.155034,-0.007364, 0.001668,-0.014803],
-  [250, 0.097154, 0.002116,-0.004283, 0.756709, 0.239837,-0.009953, 0.001464,-0.028293],
-  [400, 0.083211,-0.000591,-0.004165, 0.706953, 0.271999,-0.011501, 0.002437,-0.030872],
-];
-const BG_HUE_COEFS = [1.509081, 69.794829, 32.079289, -81.363338];
-
-const ALPHA_VALUES: [string, number][] = [
-  ['a0', 0], ['a25', 0.078], ['a50', 0.161], ['a75', 0.329],
-  ['a100', 0.478], ['a200', 0.651], ['a300', 0.812],
-];
+// BG / Alpha comparison helpers (data imported from ./theme)
 
 const PRESET_BG_TOKEN_KEY: Record<string, string> = {
   Blue: 'color/blue bg', Green: 'color/green bg', Orange: 'color/orange bg',
@@ -80,22 +75,65 @@ function originalAlphaHex(name: string, key: string): string {
   return globalTokens[PRESET_TOKEN_KEY[name]]?.[key]?.value ?? 'transparent';
 }
 
-function presetBgColor(preset: ColorPreset, step: number): string {
+function presetBgColor(preset: ColorPreset, step: number, formula: FormulaVersion): string {
+  if (formula === 'v1') {
+    const entry = V1_BG_TABLE.find(([s]) => s === step);
+    if (!entry) return 'transparent';
+    const [, mL, sL, cL, oL, mC, sC, cC, oC] = entry;
+    const hRad = preset.h * Math.PI / 180;
+    const sinH = Math.sin(hRad), cosH = Math.cos(hRad);
+    const L = Math.max(0, Math.min(1, mL * preset.l + sL * sinH + cL * cosH + oL));
+    const C = Math.max(0, mC * preset.c + sC * sinH + cC * cosH + oC);
+    const H = V1_BG_HUE_COEFS[0] * preset.h + V1_BG_HUE_COEFS[1] * sinH + V1_BG_HUE_COEFS[2] * cosH + V1_BG_HUE_COEFS[3];
+    return `oklch(${L} ${C} ${H})`;
+  }
   const entry = BG_TABLE.find(([s]) => s === step);
   if (!entry) return 'transparent';
-  const [, mL, sL, cL, oL, mC, sC, cC, oC] = entry;
+  const [, mL, oL, rC, sC, cC] = entry;
   const hRad = preset.h * Math.PI / 180;
   const sinH = Math.sin(hRad), cosH = Math.cos(hRad);
-  const L = Math.max(0, Math.min(1, mL * preset.l + sL * sinH + cL * cosH + oL));
-  const C = Math.max(0, mC * preset.c + sC * sinH + cC * cosH + oC);
-  const H = BG_HUE_COEFS[0] * preset.h + BG_HUE_COEFS[1] * sinH + BG_HUE_COEFS[2] * cosH + BG_HUE_COEFS[3];
+  const L = Math.max(0, Math.min(1, mL * preset.l + oL));
+  const ratio = rC + sC * sinH + cC * cosH;
+  const C = Math.max(0, preset.c * ratio);
+  const H = preset.h + BG_HUE_OFF_COEFS[0] * sinH + BG_HUE_OFF_COEFS[1] * cosH + BG_HUE_OFF_COEFS[2];
   return `oklch(${L} ${C} ${H})`;
 }
 
 function presetAlphaColor(preset: ColorPreset, alphaKey: string): string {
-  const av = ALPHA_VALUES.find(([k]) => k === alphaKey);
+  const av = ALPHA_STEPS.find(([k]) => k === alphaKey);
   if (!av) return 'transparent';
   return `oklch(${preset.l} ${preset.c} ${preset.h} / ${av[1]})`;
+}
+
+// ---------------------------------------------------------------------------
+// CoeffTable – shared coefficient table renderer
+// ---------------------------------------------------------------------------
+
+function CoeffTable({ headers, data }: { headers: string[]; data: readonly (readonly number[])[] }) {
+  return (
+    <div css={formulaTableWrap}>
+      <table css={formulaTable}>
+        <thead>
+          <tr>
+            <th>Step</th>
+            {headers.map(h => <th key={h}>{h}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {data.map(([step, ...coeffs]) => (
+            <tr key={step}>
+              <td css={formulaTdStep}>{step}</td>
+              {coeffs.map((v, i) => (
+                <td key={i} css={v < 0 ? formulaTdNeg : undefined}>
+                  {v >= 0 ? '+' : ''}{v.toFixed(4)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -103,8 +141,8 @@ function presetAlphaColor(preset: ColorPreset, alphaKey: string): string {
 // ---------------------------------------------------------------------------
 
 export default function App() {
-  const { hue, chroma, lightness, setHue, setChroma, setLightness } = useTheme();
-  const [activeTab, setActiveTab] = useState<Tab>('palette');
+  const { hue, chroma, lightness, formula, setHue, setChroma, setLightness, setFormula } = useTheme();
+  const [activeTab, setActiveTab] = useState<Tab>('chat');
   const [formulaOpen, setFormulaOpen] = useState(false);
 
   return (
@@ -163,6 +201,16 @@ export default function App() {
               </button>
             );
           })}
+          <div css={formulaSelectWrap}>
+            <select
+              css={formulaSelect}
+              value={formula}
+              onChange={(e) => setFormula(e.target.value as FormulaVersion)}
+            >
+              <option value="v1">v1 — delta + ratio</option>
+              <option value="v2">v2 — stable regression</option>
+            </select>
+          </div>
         </div>
       </section>
 
@@ -174,8 +222,59 @@ export default function App() {
             ▾
           </span>
         </button>
-        {formulaOpen && (
+        {formulaOpen && formula === 'v2' && (
           <div css={formulaContent}>
+            <p css={formulaDesc}>
+              기존 디자인 토큰과의 정합성을 유지하면서, 프리셋 범위 밖의 L/C/H 값에서도
+              안정적인 팔레트를 생성하도록 정규화된 계산식입니다.
+              L은 단조성이 보장되고(mL≥0), C는 theme-c에 비례하여 C=0이면 무채색이 됩니다.
+            </p>
+            <dl css={formulaLegend}>
+              <div css={formulaLegendRow}><dt>mL</dt><dd>Lightness multiplier — theme-l에 곱하는 계수 (≥0, 단조성 보장)</dd></div>
+              <div css={formulaLegendRow}><dt>oL</dt><dd>Lightness offset — 밝기 상수 오프셋</dd></div>
+              <div css={formulaLegendRow}><dt>rC</dt><dd>Chroma ratio — 기본 채도 배율 (theme-c에 곱해짐)</dd></div>
+              <div css={formulaLegendRow}><dt>sC</dt><dd>Chroma sin — sin(hue) gamut 보정 (theme-c에 곱해짐)</dd></div>
+              <div css={formulaLegendRow}><dt>cC</dt><dd>Chroma cos — cos(hue) gamut 보정 (theme-c에 곱해짐)</dd></div>
+            </dl>
+
+            <section>
+              <h4 css={formulaSectionTitle}>Chromatic Scale</h4>
+              <pre css={formulaCode}>{
+`oklch(L C H)
+  L = mL × var(--theme-l) + oL
+  C = var(--theme-c) × (rC + sC × sin(h) + cC × cos(h))
+  H = var(--theme-h)`
+              }</pre>
+              <CoeffTable headers={['mL', 'oL', 'rC', 'sC', 'cC']} data={CHROMATIC_TABLE} />
+            </section>
+
+            <section>
+              <h4 css={formulaSectionTitle}>Background</h4>
+              <pre css={formulaCode}>{
+`oklch(L C H)
+  L = mL × var(--theme-l) + oL
+  C = var(--theme-c) × (rC + sC × sin(h) + cC × cos(h))
+  H = h + ${BG_HUE_OFF_COEFS[0].toFixed(3)} × sin(h) + ${BG_HUE_OFF_COEFS[1].toFixed(3)} × cos(h) + ${BG_HUE_OFF_COEFS[2].toFixed(3)}`
+              }</pre>
+              <CoeffTable headers={['mL', 'oL', 'rC', 'sC', 'cC']} data={BG_TABLE} />
+            </section>
+
+            <section>
+              <h4 css={formulaSectionTitle}>Alpha</h4>
+              <pre css={formulaCode}>{
+`oklch(var(--theme-l) var(--theme-c) var(--theme-h) / alpha)
+  alpha: a0=0, a25=0.078, a50=0.161, a75=0.329, a100=0.478, a200=0.651, a300=0.812`
+              }</pre>
+            </section>
+          </div>
+        )}
+        {formulaOpen && formula === 'v1' && (
+          <div css={formulaContent}>
+            <p css={formulaDesc}>
+              5개 프리셋(Blue, Green, Orange, Red, Purple)의 기존 디자인 토큰 값에
+              최대한 가깝게 맞춘 계산식입니다. sin/cos 보정으로 색상별 gamut 차이를 반영하여
+              프리셋 기준 평균 RGB 에러 ~7을 달성합니다.
+            </p>
             <dl css={formulaLegend}>
               <div css={formulaLegendRow}><dt>mL</dt><dd>Lightness multiplier — theme-l에 곱하는 계수</dd></div>
               <div css={formulaLegendRow}><dt>sL</dt><dd>Lightness sin — sin(hue)에 곱하는 보정 계수</dd></div>
@@ -187,7 +286,7 @@ export default function App() {
               <div css={formulaLegendRow}><dt>oC</dt><dd>Chroma offset — 채도 상수 오프셋</dd></div>
             </dl>
 
-            <section css={formulaSection}>
+            <section>
               <h4 css={formulaSectionTitle}>Chromatic Scale</h4>
               <pre css={formulaCode}>{
 `oklch(L C H)
@@ -195,63 +294,21 @@ export default function App() {
   C = mC × var(--theme-c) + sC × sin(h) + cC × cos(h) + oC
   H = var(--theme-h)`
               }</pre>
-              <div css={formulaTableWrap}>
-                <table css={formulaTable}>
-                  <thead>
-                    <tr>
-                      <th>Step</th><th>mL</th><th>sL</th><th>cL</th><th>oL</th>
-                      <th>mC</th><th>sC</th><th>cC</th><th>oC</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {CHROMATIC_TABLE.map(([step, ...coeffs]) => (
-                      <tr key={step}>
-                        <td css={formulaTdStep}>{step}</td>
-                        {coeffs.map((v, i) => (
-                          <td key={i} css={v < 0 ? formulaTdNeg : undefined}>
-                            {v >= 0 ? '+' : ''}{v.toFixed(4)}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <CoeffTable headers={['mL', 'sL', 'cL', 'oL', 'mC', 'sC', 'cC', 'oC']} data={V1_CHROMATIC_TABLE} />
             </section>
 
-            <section css={formulaSection}>
+            <section>
               <h4 css={formulaSectionTitle}>Background</h4>
               <pre css={formulaCode}>{
 `oklch(L C H)
   L = mL × var(--theme-l) + sL × sin(h) + cL × cos(h) + oL
   C = mC × var(--theme-c) + sC × sin(h) + cC × cos(h) + oC
-  H = ${BG_HUE_COEFS[0].toFixed(3)} × h + ${BG_HUE_COEFS[1].toFixed(3)} × sin(h) + ${BG_HUE_COEFS[2].toFixed(3)} × cos(h) ${BG_HUE_COEFS[3].toFixed(3)}`
+  H = ${V1_BG_HUE_COEFS[0].toFixed(3)} × h + ${V1_BG_HUE_COEFS[1].toFixed(3)} × sin(h) + ${V1_BG_HUE_COEFS[2].toFixed(3)} × cos(h) ${V1_BG_HUE_COEFS[3].toFixed(3)}`
               }</pre>
-              <div css={formulaTableWrap}>
-                <table css={formulaTable}>
-                  <thead>
-                    <tr>
-                      <th>Step</th><th>mL</th><th>sL</th><th>cL</th><th>oL</th>
-                      <th>mC</th><th>sC</th><th>cC</th><th>oC</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {BG_TABLE.map(([step, ...coeffs]) => (
-                      <tr key={step}>
-                        <td css={formulaTdStep}>{step}</td>
-                        {coeffs.map((v, i) => (
-                          <td key={i} css={v < 0 ? formulaTdNeg : undefined}>
-                            {v >= 0 ? '+' : ''}{v.toFixed(4)}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <CoeffTable headers={['mL', 'sL', 'cL', 'oL', 'mC', 'sC', 'cC', 'oC']} data={V1_BG_TABLE} />
             </section>
 
-            <section css={formulaSection}>
+            <section>
               <h4 css={formulaSectionTitle}>Alpha</h4>
               <pre css={formulaCode}>{
 `oklch(var(--theme-l) var(--theme-c) var(--theme-h) / alpha)
@@ -382,19 +439,20 @@ function PaletteTab() {
 }
 
 function CompareTab() {
+  const { formula } = useTheme();
   return (
     <div css={compareGrid}>
       <CompareSection
         title="Scale"
         steps={SCALE_STEPS}
         getOriginal={(name, step) => originalHex(name, step as number)}
-        getComputed={(preset, step) => presetStepColor(preset, step as number)}
+        getComputed={(preset, step) => presetStepColor(preset, step as number, formula)}
       />
       <CompareSection
         title="Background"
         steps={BG_STEPS}
         getOriginal={(name, step) => originalBgHex(name, step as number)}
-        getComputed={(preset, step) => presetBgColor(preset, step as number)}
+        getComputed={(preset, step) => presetBgColor(preset, step as number, formula)}
       />
       <CompareSection
         title="Alpha"
@@ -439,20 +497,16 @@ function CompareSection({
             <span>{preset.name}</span>
           </div>
           <div css={compareSwatches}>
-            {steps.map((step) => (
-              <div key={step} css={[compareSwatchPair, alpha && checkerboard]}>
-                <div
-                  css={compareSwatchHalf}
-                  style={{ backgroundColor: getOriginal(preset.name, step) }}
-                  title={`원본: ${getOriginal(preset.name, step)}`}
-                />
-                <div
-                  css={compareSwatchHalf}
-                  style={{ backgroundColor: getComputed(preset, step) }}
-                  title={`계산: ${getComputed(preset, step)}`}
-                />
-              </div>
-            ))}
+            {steps.map((step) => {
+              const orig = getOriginal(preset.name, step);
+              const calc = getComputed(preset, step);
+              return (
+                <div key={step} css={[compareSwatchPair, alpha && checkerboard]}>
+                  <div css={compareSwatchHalf} style={{ backgroundColor: orig }} title={`원본: ${orig}`} />
+                  <div css={compareSwatchHalf} style={{ backgroundColor: calc }} title={`계산: ${calc}`} />
+                </div>
+              );
+            })}
           </div>
         </div>
       ))}
@@ -590,6 +644,24 @@ const presetLabelCss = css`
   color: var(--color-gray-400);
 `;
 
+const formulaSelectWrap = css`
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+`;
+
+const formulaSelect = css`
+  font-size: 12px;
+  padding: 4px 8px;
+  border: 1px solid var(--color-gray-150);
+  border-radius: var(--round-6);
+  background: var(--color-white);
+  color: var(--color-gray-600);
+  cursor: pointer;
+  outline: none;
+  &:focus { border-color: var(--color-gray-300); }
+`;
+
 // ---------------------------------------------------------------------------
 // Styles – Formula panel
 // ---------------------------------------------------------------------------
@@ -628,7 +700,16 @@ const formulaContent = css`
   gap: 16px;
 `;
 
-const formulaSection = css``;
+const formulaDesc = css`
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--color-gray-500);
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  background: var(--color-gray-25);
+  border-left: 3px solid var(--color-gray-150);
+  border-radius: 0 var(--round-4) var(--round-4) 0;
+`;
 
 const formulaLegend = css`
   display: grid;
